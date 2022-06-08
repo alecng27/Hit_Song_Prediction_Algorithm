@@ -1,0 +1,10 @@
+# Conclusion
+
+  This project utilized various machine learning algorithms to predict the `popularity` of a song. Based on **CV RMSE** results, the **Random Forest framework** performed the best for this task. The model has a **prediction error rate** of **12.81495** when fitted onto the testing data.
+
+While it is hard to interpret the exact effect of variables in random forests, the model provides variable importance. Some of the most important features of a song, regarding popularity and that the artist can control, are **length**, **loudness**, **danceability**, and **BPM**.
+
+Other research on the same topic provides mixed results. [Reiman and Ornell (2018)](https://www.diva-portal.org/smash/get/diva2:1214146/FULLTEXT01.pdf) was unseccessful in confirming if predicting popularity of a song is possible. On the other spectrum, [Herremans (2014)](https://towardsdatascience.com/data-science-for-hit-song-prediction-32370f0759c1) could predict with 81% accuracy if a song could make to the top 10.
+
+It will be for future research to see if these variables are the most important. The results from the other models suggest that **older**, **louder**, **more danceable**, and **shorter** songs tend to score better. In addition, our final model has an **$R^2$** of **0.27**, which indicates that there is plenty of room for improvements.
+

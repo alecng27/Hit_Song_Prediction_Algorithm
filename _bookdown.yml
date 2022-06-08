@@ -1,0 +1,6 @@
+book_filename: "home"
+delete_merged_file: true
+new_session: false
+edit: https://github.com/alecng27/Hit_Song_Prediction_Algorithm/edit/master/%s
+view: https://github.com/alecng27/Hit_Song_Prediction_Algorithm/blob/master/%s
+history: https://github.com/alecng27/Hit_Song_Prediction_Algorithm/commits/master/%s

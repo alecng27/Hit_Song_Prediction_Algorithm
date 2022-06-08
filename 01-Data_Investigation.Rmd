@@ -1,0 +1,61 @@
+# Data Investigation
+
+  There are 1958 unique titles, 731 artists, and 149 genres in this dataset. The dataset contains 14 columns each describing the track and its qualities. This data contains audio features like `Danceability`, `BPM`, `Liveness`, `Valence` (Positivity) and many more. 
+
+For details on how the audio features are graded, refer to the 
+[Evaluation Guideline](https://images.are.na/eyJidWNrZXQiOiJhcmVuYV9pbWFnZXMiLCJrZXkiOiI1OTA0NTkvb3JpZ2luYWxfMDJjMGY1ODMxODAwZDhiZTRiMzBhYzNhOGVhYTE5M2IiLCJlZGl0cyI6eyJyZXNpemUiOnsid2lkdGgiOjEyMDAsImhlaWdodCI6MTIwMCwiZml0IjoiaW5zaWRlIiwid2l0aG91dEVubGFyZ2VtZW50Ijp0cnVlfSwid2VicCI6eyJxdWFsaXR5Ijo5MH0sImpwZWciOnsicXVhbGl0eSI6OTB9LCJyb3RhdGUiOm51bGx9fQ==?bc=0) provided by, [Echo Nest](http://sortyourmusic.playlistmachinery.com), now aquired by Spotify.
+
+Audio features are defined as follow:
+
+```{r class.source = 'fold-hide'}
+report <- data.frame(Variable = c("Title","Artist", "Genre", "Year", "BPM", "Energy", 
+                                "Danceability", "Loudness", "Liveness", "Valence", "Length", 
+                                "Acoustic", "Speechiness", "Popularity"),
+
+           Definition = c("Name of the Track",
+                          "Name of the Artist",
+                          "Genre of the track",
+                          "Release year of the track",
+                          "The tempo of the song, beats per minute",
+                          "The energy of a song- the higher the value, the more energetic the song",
+                          "The higher the value, the easier it is to dance to the song",
+                          "The higher the value, the louder the song",
+                          "The higher the value, the more likely the song is a live recording",
+                          "The higher the value, the more positive mood for the song",
+                          "The duration of the song (in seconds)",
+                          "The higher the value the more acoustic the song is",
+                          "The higher the value the more spoken words the song contains",
+                          "The higher the value the more popular the song")
+                    ) 
+
+# knitr::kable(report)
+# 
+# report$RMSE = cell_spec(report$RMSE, bold = TRUE, color = "white", 
+#                         background = ifelse(report$RMSE == min(report$RMSE), "green", "red"))
+# report$models = cell_spec(report$models, bold = TRUE)
+
+kbl(report, escape = FALSE) %>% kable_styling(bootstrap_options = c("striped", "hover", "responsive")) 
+```
+
+With a quick glance at the summary statistics below, there are hit songs with identical titles. For the `Artist` variable, **Queen** had the most top hit songs, followed by **The Beatles** and **Coldplay**. As for the `Genre` variable, the top hit songs fell into **rock**, **adult standards**, and **dutch pop**. None of the variables have missing values.
+
+```{r class.source = 'fold-hide'}
+# Importing data
+Spotify <- read_csv("Datasets/Spotify-2000.csv")
+
+# Quick cleaning
+Spotify <- Spotify %>%
+  # Remove the index column
+  select(-c(Index)) %>%
+  # Convert character in to factor
+  mutate_if(is.character,as.factor) %>%
+  # Rename with cleaner names
+  rename(Genre = `Top Genre`,
+         Length = `Length (Duration)`,
+         BPM = `Beats Per Minute (BPM)`,
+         Loudness = `Loudness (dB)`)
+
+summary(Spotify)
+```
+
+

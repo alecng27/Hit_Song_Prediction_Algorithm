@@ -1,0 +1,194 @@
+# Data Preprocessing {.tabset}
+
+The three categorical variables `Genre`, `Title`, and `Artist` required unique solutions to extract features:
+
+## Genre
+
+Having all 149 genres as dummy variables would be problematic. As such, some genres got combined together. The resulting combination of different genres can be found below (for reproducibility purpose).
+
+```{r class.source = 'fold-hide'}
+# Combine genre
+combine_sheet <-read_csv("Datasets/CMSC (Genre).csv") # Pre-made combine sheet
+
+# Mutate dataset to use the combined genres
+Spotify <- Spotify %>%
+  mutate(Combined_Genre = case_when(
+    Genre %in% combine_sheet$`Rock/Metal` ~ "Rock_Metal",
+    Genre %in% combine_sheet$Alternative ~ "Alternative",
+    Genre %in% combine_sheet$Punk ~ "Punk",
+    Genre %in% combine_sheet$`Folk/Indie` ~ "Folk_Indie",
+    Genre %in% combine_sheet$Classic ~ "Classic",
+    Genre %in% combine_sheet$Soul ~ "Soul",
+    Genre %in% combine_sheet$Dance ~ "Dance",
+    Genre %in% combine_sheet$Jazz ~ "Jazz",
+    Genre %in% combine_sheet$`Singer-Songwriter` ~ "Singer_Songwriter",
+    Genre %in% combine_sheet$`Country` ~ "Country",
+    Genre %in% combine_sheet$`(Hip)Pop` ~ "Hip_Pop",
+    TRUE ~ "Other"
+  )) %>%
+  mutate(Combined_Genre = as.factor(Combined_Genre))
+
+detail <- data.frame(Combined = colnames(combine_sheet),
+           Genres = apply(combine_sheet,2, function(x) paste(x[!is.na(x)], collapse = ", ")))
+
+detail$Combined = cell_spec(detail$Combined, bold = TRUE)
+# detail$Genres = cell_spec(detail$Genres, bold = TRUE)
+
+kbl(detail, escape = FALSE, row.names = FALSE) %>% kable_styling(bootstrap_options = c("striped", "hover", "responsive")) 
+```
+
+## Title
+
+With most titles being unique, converting titles into dummy variables as is would also be problematic,. Hence, **Natural Language Processing (NLP)** techniques were applied to create new features:
+\
+\
+**1.** The first technique would create a count feature that keep track of amount of words in a title. 
+
+```{r class.source = 'fold-hide'}
+# Create a new variable, length of title
+Spotify <- Spotify %>%
+  mutate(Title_Word_Count = str_count(Spotify$Title, pattern = "\\w+"))
+```
+
+**2.** The second technique, **Bag of Words (BoW)**, would create a dummy variable if a particular word appear in the title. 
+
+```{r class.source = 'fold-hide'}
+# Split data
+set.seed(888)
+# Split data
+Spotify_index <- createDataPartition(Spotify$Popularity, p = 0.8, list = FALSE)
+Spotify_train <- Spotify[Spotify_index,]
+Spotify_test <- Spotify[-Spotify_index,] 
+
+# Create 25 most common words
+
+# Firstly, we will have to lower case titles
+Spotify_train <- Spotify_train %>% mutate(Title = str_to_lower(Title))
+Spotify_test  <- Spotify_test  %>% mutate(Title = str_to_lower(Title))
+
+# Secondly, we find which words do we want to create a dummy for, from TRAINING
+word_count <- data.frame(matrix(ncol = 2, nrow = 0))
+colnames(word_count) <- c('word', 'count')
+black_list <- stopwords()
+for (title in strsplit(Spotify_train$Title, "[- ,\\(\\)\"]")) { # Split on common separators 
+  for (word in title) {
+    if (!(word %in% black_list)) { # Filter out numbers and common words, just common library for now
+      if (word %in% word_count$word) {
+        word_count$count[which(word_count$word == word)] <- word_count$count[which(word_count$word == word)] + 1
+      } else {
+        word_count <- rbind(word_count, data.frame(word = word, count = 1))
+      }
+    }
+  }
+}
+
+word_count <- arrange(word_count, desc(count)) # Arrange by count
+word_count <- word_count[-c(1),] # Remove most common: white space
+significant_words <- head(word_count,25)$word # Just take most common 25 for now, can tune later
+
+# Thirdly,for each of the word in the list, we create a dummy variable
+
+# Helper function to check if word is in a title (have to be custom made since the split above is also custom)
+check_word <- function(title, word) {
+  word_list <- strsplit(title, "[- ,\\(\\)\"]")[[1]]
+  return(word %in% word_list)
+}
+check_word_expanded <- function(word, titles) {
+     sapply(titles, check_word, word = word)
+}
+
+word_mutate <- function(data, word_list) {
+  new_data <- data
+  for (word in word_list) {
+    col_name <- to_any_case(paste("contains", word),case = "snake")
+    new_data <- new_data %>% 
+      mutate("{col_name}" := ifelse(check_word_expanded(word, Title), 1, 0))
+  }
+  return(new_data)
+}
+
+# Apply funciton onto training and testing datasets
+Spotify_train <- word_mutate(Spotify_train, significant_words)
+Spotify_test <- word_mutate(Spotify_test, significant_words)
+```
+
+**There are three drawbacks with the BoW technique, two of which will be directly addressed.**
+
+1. BoW tends to create too many features, as such we reduce the BoW to 25 most common words. 
+
+2. BoW include words that doesn't contribute any meaning, called **stopwords**. A R library package, `stopwords`, was used to filter out all the common stopwords. However, the list of stopwords should be context specific and that could be a point of future research. 
+
+3. BoW doesn't account for sentence structure and context. However, since the text are short titles, it is less of a concern. Of course, NLP is an advanced subject and could warrant further exploration. Due to the constrain of time, this is as far this research will go.
+
+## Artist 
+
+With 1958 unique artists in the dataset, it would be redundant to turn all artists into dummy variables. Instead, dummy variables were created for the top 25 artists with the most appearance in the dataset.
+
+```{r class.source = 'fold-hide'}
+# Create 25 most repeated artists
+# First create a list of 25 most repeated artists from TRAINING data set
+top_25_artists <- Spotify_train %>% group_by(Artist) %>%
+  summarize(n = n()) %>%
+  arrange(desc(n)) %>%
+  head(25) # Top 25 for now, tune later
+
+# Create function to create dummy variable to each artist given a list
+artist_mutate <- function(data, artist_list) {
+  new_data <- data
+  for (artist in artist_list) {
+    col_name <- to_any_case(paste("By", artist),case = "snake")
+    new_data <- new_data %>% 
+      dplyr::mutate("{col_name}" := ifelse(artist == Artist, 1, 0))
+  }
+  return(new_data)
+}
+
+# Apply the function on both train and test dataset
+Spotify_train <- artist_mutate(Spotify_train, top_25_artists$Artist)
+Spotify_test <- artist_mutate(Spotify_test, top_25_artists$Artist)
+```
+
+**Note**: Some of the preprocessing steps performed for `Title` and `Artist` are too complex for the R package `recipe`. Precaution have been taken to prevent data leakage when splitting the data into training and testing sets. However, by creating these features before making the recipe means that data leakage is present at the CV level.
+
+To remark, potential expansion of this topic includes:
+
+1. Using better NLP techniques
+
+2. Choosing the optimal number of words in BoW
+
+3. Choosing the optimal number of artist dummies
+
+4. Prevent data leakage at the CV level
+
+## Numerical variables 
+
+Since all numerical variables are not zero-value or near zero-value, not many preprocessing steps were required. The only task was to center and scale the variables.
+
+```{r}
+# We deselect Title, Artist, and Genre
+Spotify_train <- select(Spotify_train, !c(Title, Artist, Genre))
+Spotify_test <- select(Spotify_test, !c(Title, Artist, Genre))
+
+# preprocessing
+spotify_recipe <- recipe(Popularity ~. , data = Spotify_train)   # create the recipe for blueprint
+
+# spotify_recipe$var_info   # check the types and roles of variables
+# nearZeroVar(Spotify_train, saveMetrics = TRUE)   # The majority of the custom dummies are nzv, but that is to be expected for premade dummies
+
+blueprint <- spotify_recipe %>%
+  step_center(all_numeric_predictors(), -starts_with("by"), -starts_with("contains")) %>%   # center all numeric features except response and premade dummies
+  step_scale(all_numeric_predictors(), -starts_with("by"), -starts_with("contains")) %>%    # scale all numeric features except response and premade dummies
+  step_dummy(all_nominal_predictors(), one_hot = FALSE) # create dummy variables for nominal categorical features
+
+# blueprint
+prepare <- prep(blueprint, training = Spotify_train)   # estimate feature engineering parameters from training set
+baked_train <- bake(prepare, new_data = Spotify_train)  # apply blueprint to training set
+baked_test <- bake(prepare, new_data = Spotify_test)    # apply blueprint to test set
+```
+
+
+
+
+
+
+

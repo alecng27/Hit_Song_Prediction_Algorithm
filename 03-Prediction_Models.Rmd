@@ -1,0 +1,313 @@
+# Prediction Models {.tabset}
+
+
+Eight supervised learning models are utilized on the training data to compare performance using **Cross-Validations (CV)**.
+
+```{r class.source = 'fold-hide'}
+set.seed(888)
+# We choose the CV setting of 5 fold and 5 repeats
+cv_specs <- trainControl(method = "repeatedcv", number = 5, repeats = 5)
+```
+
+The optimal tuning parameter, **Root-Mean-Square Error (RMSE)**,  for each model is reported in the [RMSE Table]. The best-performing model is then applied to the testing data.
+
+
+## RMSE Table
+```{r class.source = 'fold-hide'}
+# Restore the object
+mlr_cv <- readRDS(file = "Datasets/mlr_cv.rds")
+knn_cv <- readRDS(file = "Datasets/knn_cv.rds")
+ridge_cv <- readRDS(file = "Datasets/ridge_cv.rds")
+lasso_cv <- readRDS(file = "Datasets/lasso_cv.rds")
+mars_cv <- readRDS(file = "Datasets/mars_cv.rds")
+tree_cv <- readRDS(file = "Datasets/tree_cv.rds")
+bag_cv <- readRDS(file = "Datasets/bag_cv.rds")
+rf_cv <- readRDS(file = "Datasets/rf_cv.rds")
+
+report <- data.frame(models = c("MLR","KNN", "Ridge", "Lasso", "MARS", "Regression tree", "Bagged tree", "Random forests"),
+           bestTunes = c("N/A", # MLR tune
+                         paste("k =", knn_cv$bestTune$k), # KNN tune
+                         paste("lambda =", ridge_cv$bestTune$lambda), # Ridge tune
+                         paste("lambda =", lasso_cv$bestTune$lambda), # Lasso tune
+                         paste("degree =", mars_cv$bestTune$degree, "; nprune =", mars_cv$bestTune$nprune), # MARS tune
+                         paste("cp =", tree_cv$bestTune$cp), # Regression tree tune
+                         "N/A", # Bagged tune
+                         paste("mtry =", rf_cv$bestTune$mtry)), # Random forest tune
+           RMSE = c(min(mlr_cv$results$RMSE), # MLR CV RMSE
+                    min(knn_cv$results$RMSE), # KNN CV RMSE
+                    min(ridge_cv$results$RMSE), # Ridge CV RMSE
+                    min(lasso_cv$results$RMSE), # Lasso CV RMSE
+                    min(mars_cv$results$RMSE), # MARS CV RMSE
+                    min(tree_cv$results$RMSE), # Regression tree CV RMSE
+                    min(bag_cv$results$RMSE), # Bagged CV RMSE
+                    min(rf_cv$results$RMSE))) # Random forest CV RMSE
+
+report <- report %>% mutate_if(is.numeric, format, digits=7)
+# knitr::kable(report)
+
+report$RMSE = cell_spec(report$RMSE, bold = TRUE, color = "white", 
+                        background = ifelse(report$RMSE == min(report$RMSE), "green", "red"))
+report$models = cell_spec(report$models, bold = TRUE)
+
+kbl(report, escape = FALSE) %>% kable_styling(bootstrap_options = c("striped", "hover", "responsive")) 
+```
+
+```{r}
+# fit final model
+rffit <- ranger(Popularity ~ .,
+                data = baked_train,
+                num.trees = 500,
+                mtry = rf_cv$bestTune$mtry,
+                splitrule = "variance",   # use "gini" for classificaton
+                min.node.size = 2,
+                importance = "impurity")
+
+# variable importance
+data.frame(Overall = rffit$variable.importance) %>% arrange(desc(Overall)) %>% head(10)
+
+# R-Squared of the final model
+rffit$r.squared
+
+preds_rf <- predict(rffit, data = baked_test, type = "response")  # predictions on test set
+pred_error_est_rffit <- sqrt(mean((preds_rf$predictions - baked_test$Popularity)^2))  # test set RMSE
+pred_error_est_rffit
+
+```
+
+
+## MLR
+```{r, eval=FALSE}
+set.seed(888)
+################### MLR ###################
+mlr_cv <- train(blueprint,
+                 data = Spotify_train, 
+                 method = "lm",
+                 trControl = cv_specs,
+                 metric = "RMSE")
+# Save an object to a file
+saveRDS(mlr_cv, file = "Datasets/mlr_cv.rds")
+
+min(mlr_cv$results$RMSE) # MLR CV RMSE
+```
+
+**Multiple linear regression (MLR)** is a parametric approach, which assumes a linear relationship between response and features.
+
+**Note**: Attempting to predict the response for a value of the predictor that lies outside the range of the data is **NOT** recommended. This is called **extrapolation**, and the predictions tend to be unreliable.
+
+
+## KNN
+```{r, eval=FALSE}
+set.seed(888)
+################### KNN ###################
+k_grid <- expand.grid(k = seq(1, 15, 1))   # for KNN regression
+
+knn_cv <- train(blueprint,
+                 data = Spotify_train, 
+                 method = "knn",
+                 trControl = cv_specs,
+                 tuneGrid = k_grid,
+                 metric = "RMSE")
+
+# Save an object to a file
+saveRDS(knn_cv, file = "Datasets/knn_cv.rds")
+
+min(knn_cv$results$RMSE) # KNN CV RMSE
+```
+
+**K Nearest Neighbors (KNN)** is a non-parametric method that approximates the association between independent variables and the continuous outcome by averaging the observations in the same neighborhood. This method becomes impractical when the dimension increases (when there are many independent variables).
+
+Smaller values for K can be noisy and will have higher influence on the result, while a larger value will have smoother decision boundaries which mean lower variance but increased bias. 
+
+**Note**: KNN does not have any specialized training phase as it uses all the training samples for classification and simply stores the results in memory. KNN can be very sensitive to the scale of data as it relies on computing the distances. For features with a higher scale, the calculated distances can be very high and might produce poor results. It is thus advised to scale the data before running the KNN.
+
+
+## Ridge
+```{r, eval=FALSE}
+set.seed(888)
+################### Ridge Regression ###################
+lambda_grid <- 10^seq(-3, 3, length = 100)   # grid of lambda values to search over
+
+ridge_cv <- train(blueprint,
+                  data = Spotify_train,
+                  method = "glmnet",   # for ridge regression
+                  trControl = cv_specs,
+                  tuneGrid = expand.grid(alpha = 0, lambda = lambda_grid),  # alpha = 0 implements ridge regression
+                  metric = "RMSE")
+# Save an object to a file
+saveRDS(ridge_cv, file = "Datasets/ridge_cv.rds")
+
+min(ridge_cv$results$RMSE) # Ridge CV RMSE
+```
+
+**Ridge Regression** is a model tuning method that’s used to analyze any data that suffers from multicollinearity. When the issue of multicollinearity occurs, least-squares are unbiased, and variance are large, which results in predicted values being far away from the actual values.
+
+**Ridge is useful for this dataset because many independent variables in the model are correlated:**
+
+  - `Danceability` is affected by several other variables such as `loudness`, `energy`, and `BPM`.
+
+  - `Loudness` and `liveness` is also affected by `valence`; high valence sound more positive (happy, cheerful, euphoric) while low valence sound more          negative (sad, depressed, angry)
+  
+  - `Valence` can also affect `danceability`, additionally songs with low valence tends to be higher on `speechiness` and `acousticness`. 
+
+  - Certain artists tend to make similar music (the composition of the song).
+
+As lambda increases, the bias is unchanged but the variance drops. The drawback is that Ridge doesn't select variables, it includes all of the variables in the final model
+
+```{r class.source = 'fold-hide'}
+g1 <- ggplot(ridge_cv)   # lambda vs. RMSE plot
+g2 <- ggplot(ridge_cv) + xlim(c(0,2))    # a closer look at lambda vs. RMSE plot
+grid.arrange(g1, g2, ncol = 2)
+```
+
+
+## Lasso
+```{r, eval=FALSE}
+set.seed(888)
+################### LASSO Regression ###################
+lasso_cv <- train(blueprint,
+                  data = Spotify_train,
+                  method = "glmnet",   # for lasso
+                  trControl = cv_specs,
+                  tuneGrid = expand.grid(alpha = 1, lambda = lambda_grid),  # alpha = 1 implements lasso
+                  metric = "RMSE")
+# Save an object to a file
+saveRDS(lasso_cv, file = "Datasets/lasso_cv.rds")
+
+min(lasso_cv$results$RMSE) # Lasso CV RMSE
+```
+
+**Lasso Regression** shrinks the coefficient estimates towards zero and it has the effect of setting variables exactly equal to zero when lambda is large enough while ridge does not. When lambda is small, the result is essentially the least square estimate, as it increases, shrinkage occurs so that variables that are zero can be thrown away.
+
+**Major advantage is that it’s a combination of both shrinkage and selection of variables:**
+
+  - Holding all other variables constant, the `popularity` of any song is **59.75** on a 100 scale.
+  
+  - `Danceability`, `loudness`, and `speechiness` is positively correlated with `popularity`.
+  
+  - `Year`, `energy`, `liveness`, `valence`, `length`, and `acousticness` is negatively correlated with `popularity`.
+  
+  - Coefficient for `BPM` and `title_word_count` are 0, so they are thrown away.
+  
+  - If the song is by **Coldplay** or **Ed Sheeran** it is positively correlated. `Popularity` increases by 3.93 for **Coldplay** and increases by **6.71**     if it is by **Ed Sheeran**.
+
+By changing the value of lambda we are controlling the penalty term; the higher the value the bigger the penalty and therefore the magnitude of coefficients is reduced. 
+
+```{r class.source = 'fold-hide'}
+g3 <- ggplot(lasso_cv)   # lambda vs. RMSE plot
+g4 <- ggplot(lasso_cv) + xlim(c(0,2))    # a closer look at lambda vs. RMSE plot
+grid.arrange(g3, g4, ncol = 2)
+```
+
+
+## MARS
+```{r, eval=FALSE}
+set.seed(888)
+################### MARS ################### 
+param_grid_mars <- expand.grid(degree = 1:3, nprune = seq(1, 100, length.out = 10))   # for MARS
+
+mars_cv <- train(blueprint,
+                 data = Spotify_train,
+                 method = "earth",
+                 trControl = cv_specs,
+                 tuneGrid = param_grid_mars,
+                 metric = "RMSE")
+# Save an object to a file
+saveRDS(mars_cv, file = "Datasets/mars_cv.rds")
+
+min(mars_cv$results$RMSE) # MARS CV RMSE
+```
+
+**Multivariate Adaptive Regression Splines (MARS)** seek to capture a non-linear relationship between features and outcome by adding knots to break the regression fit line into piecewise functions. 
+
+The two tuning parameters in the **degree**, which indicate optimal degree of interaction, and **nprune** which is related to the process of pruning knots that doesn't contribute to fitting.
+
+**Optimal degree** of this model is **1**, which indicate that there is not an interaction effect in general. Our **optimal pruning** parameter is **23**.
+
+
+## Regression Tree
+```{r, eval=FALSE}
+set.seed(888)
+################### Regression Tree ################### 
+tree_cv <- train(blueprint,
+                 data = Spotify_train,
+                 method = "rpart",
+                 trControl = cv_specs,
+                 tuneLength = 20,
+                 metric = "RMSE")
+# Save an object to a file
+saveRDS(tree_cv, file = "Datasets/tree_cv.rds")
+
+min(tree_cv$results$RMSE) # Regression tree CV RMSE
+```
+
+**Regression tree** splits the observations based on the features. Factors most significantly divide the outcome can be observed through this method.
+
+The tuning parameter for this model is **cp**, which control for the complexity of the model.
+
+Looking at the graph below, the model predicted **folk indie songs** score in popularity. In addition, some artists are flagged by the model to score lower popularity score than average. Lastly, louder, older, and shorter songs tend score better.
+
+```{r class.source = 'fold-hide'}
+rpart.plot(tree_cv$finalModel)
+```
+
+
+## Bagged 
+```{r, eval=FALSE}
+set.seed(888)
+################### Bagged ################### 
+# Tutorial https://bradleyboehmke.github.io/HOML/bagging.html section 10.4
+bag_cv <- train(blueprint,
+                 data = Spotify_train, 
+                 method = "treebag",
+                 trControl = cv_specs,
+                 nbagg = 500,
+                 control = rpart.control(minsplit = 2, cp = 0, xval = 0),
+                 metric = "RMSE")
+# Save an object to a file
+saveRDS(bag_cv, file = "Datasets/bag_cv.rds")
+library(dplyr) # Prevent plyr overwrite dplyr
+
+min(bag_cv$results$RMSE) # Bagged CV RMSE
+```
+
+**Bagging** uses bootstrap to create multiple datasets that is a subset of the original dataset. And for each of the bootstrap sample, the model will build a regression tree. The bagging model will average the results of the regression trees. In this implementation, 500 trees were generated.
+
+The **10** most important variables using the bagging model are listed below:
+
+```{r class.source = 'fold-hide'}
+# Top 10 most important variables
+varImp(bag_cv$finalModel) %>% arrange(desc(Overall)) %>% head(10)
+```
+
+## Random Forests
+```{r, eval=FALSE}
+set.seed(888)
+################### Random Forests ################### 
+param_grid_rf <- expand.grid(mtry = seq(1, ncol(baked_train) - 1, 1), # for random forests # sequence of 1 to number of predictors
+                          splitrule = "variance",  # "gini" for classification
+                          min.node.size = 2)       # for each tree
+
+rf_cv <- train(blueprint,
+               data = Spotify_train,
+               method = "ranger",
+               trControl = cv_specs,
+               tuneGrid = param_grid_rf,
+               importance = "permutation", # needed to use varImp, check https://stackoverflow.com/questions/37279964/variable-importance-with-ranger
+               metric = "RMSE")
+# Save an object to a file
+saveRDS(rf_cv, file = "Datasets/rf_cv.rds")
+
+min(rf_cv$results$RMSE) # Random forest CV RMSE
+```
+
+**Random Forests** seek to improve the regression tree by running multiple regression trees through bootstrapping. However, different from bagging, random forest split the data based on the number of predictors that each tree have access to. 
+
+The **mtry** parameter controls for the number of predictors. The **10** most important variables using the random forest model are listed below:
+
+```{r class.source = 'fold-hide'}
+# Top 10 most important variables
+varImp(rf_cv)$importance %>% arrange(desc(Overall)) %>% head(10)
+```
+
+
+
