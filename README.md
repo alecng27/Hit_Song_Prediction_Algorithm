@@ -9,3 +9,4 @@ https://alecng27.github.io/Hit_Song_Prediction_Algorithm/home
 
 See the [LICENSE](LICENSE) file for license rights and limitations.
 
+![](Artwork.jpeg)
